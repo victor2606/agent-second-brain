@@ -26,6 +26,10 @@ class Settings(BaseSettings):
         default_factory=list,
         description="List of Telegram user IDs allowed to use the bot",
     )
+    allow_all_users: bool = Field(
+        default=False,
+        description="Whether to allow access to all users (security risk!)",
+    )
 
     @property
     def daily_path(self) -> Path:

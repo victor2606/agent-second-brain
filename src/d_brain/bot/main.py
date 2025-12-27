@@ -47,7 +47,7 @@ MiddlewareHandler = Callable[[Update, dict[str, Any]], Awaitable[Any]]
 MiddlewareType = Callable[[MiddlewareHandler, Update, dict[str, Any]], Awaitable[Any]]
 
 
-def create_auth_middleware(allowed_user_ids: list[int]) -> MiddlewareType:
+def create_auth_middleware(settings: Settings) -> MiddlewareType:
     """Create middleware to check user authorization."""
 
     async def auth_middleware(
@@ -55,13 +55,23 @@ def create_auth_middleware(allowed_user_ids: list[int]) -> MiddlewareType:
         event: Update,
         data: dict[str, Any],
     ) -> Any:
+        # If explicitly allowed all users, just bypass check
+        if settings.allow_all_users:
+            return await handler(event, data)
+
         user = None
         if event.message:
             user = event.message.from_user
         elif event.callback_query:
             user = event.callback_query.from_user
 
-        if user and allowed_user_ids and user.id not in allowed_user_ids:
+        # If no users allowed and not allow_all_users -> deny everyone
+        if not settings.allowed_user_ids:
+            logger.warning("Access denied: no allowed_user_ids configured and allow_all_users is False")
+            return None
+
+        # Check if user is in allowed list
+        if user and user.id not in settings.allowed_user_ids:
             logger.warning("Unauthorized access attempt from user %s", user.id)
             return None
 
@@ -75,8 +85,8 @@ async def run_bot(settings: Settings) -> None:
     bot = create_bot(settings)
     dp = create_dispatcher()
 
-    if settings.allowed_user_ids:
-        dp.update.middleware(create_auth_middleware(settings.allowed_user_ids))
+    # Always add auth middleware for security (it handles allow_all_users internally)
+    dp.update.middleware(create_auth_middleware(settings))
 
     logger.info("Starting bot polling...")
     try:
