@@ -3,13 +3,10 @@
 # =============================================================================
 # Agent Second Brain - Bootstrap Script
 # =============================================================================
-# Downloads and runs the full setup script
+# Downloads setup.sh and runs it properly (not via pipe)
 #
-# Usage (after forking the repo):
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_USER/agent-second-brain/main/bootstrap.sh | bash
-#
-# Or with your username:
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_USER/agent-second-brain/main/bootstrap.sh | bash -s YOUR_USER
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/smixs/agent-second-brain/main/bootstrap.sh | bash
 # =============================================================================
 
 set -e
@@ -31,58 +28,35 @@ if [ "$EUID" -eq 0 ]; then
     exit 1
 fi
 
-# Get GitHub username
-GITHUB_USER="${1:-}"
+# Always download from original repo
+SETUP_URL="https://raw.githubusercontent.com/smixs/agent-second-brain/main/setup.sh"
 
-if [ -z "$GITHUB_USER" ]; then
-    echo -e "${CYAN}Enter your GitHub username (where you forked the repo):${NC}"
-    # Read from /dev/tty to handle curl | bash case
-    read -r GITHUB_USER < /dev/tty
-fi
+echo "Downloading setup script..."
 
-if [ -z "$GITHUB_USER" ]; then
-    echo -e "${RED}[X] GitHub username is required${NC}"
-    echo ""
-    echo "Usage:"
-    echo "  curl -fsSL URL | bash -s YOUR_GITHUB_USER"
-    echo "  Example: curl -fsSL URL | bash -s smixs"
-    exit 1
-fi
+# Create temp file
+TEMP_SCRIPT=$(mktemp /tmp/setup-XXXXXX.sh)
 
-SETUP_URL="https://raw.githubusercontent.com/$GITHUB_USER/agent-second-brain/main/setup.sh"
-
-echo ""
-echo "Downloading setup script from:"
-echo "  $SETUP_URL"
-echo ""
-
-# Check if curl or wget available
+# Download setup script
 if command -v curl &> /dev/null; then
-    SETUP_SCRIPT=$(curl -fsSL "$SETUP_URL")
+    curl -fsSL "$SETUP_URL" -o "$TEMP_SCRIPT"
 elif command -v wget &> /dev/null; then
-    SETUP_SCRIPT=$(wget -qO- "$SETUP_URL")
+    wget -q "$SETUP_URL" -O "$TEMP_SCRIPT"
 else
-    echo -e "${RED}[X] Neither curl nor wget found. Install one first:${NC}"
-    echo "    sudo apt install curl"
+    echo -e "${RED}[X] Neither curl nor wget found${NC}"
+    echo "    Install: sudo apt install curl"
     exit 1
 fi
 
-if [ -z "$SETUP_SCRIPT" ]; then
+if [ ! -s "$TEMP_SCRIPT" ]; then
     echo -e "${RED}[X] Failed to download setup script${NC}"
-    echo "    Make sure you've forked the repo and the username is correct"
+    rm -f "$TEMP_SCRIPT"
     exit 1
 fi
 
-echo -e "${GREEN}[OK] Setup script downloaded${NC}"
+echo -e "${GREEN}[OK] Downloaded${NC}"
 echo ""
 
-# Run the setup script
-echo "Starting setup..."
-echo ""
-
-# Create temp file and run
-TEMP_SCRIPT=$(mktemp)
-echo "$SETUP_SCRIPT" > "$TEMP_SCRIPT"
+# Make executable and run PROPERLY (not via pipe!)
+# exec replaces current process, so stdin works normally
 chmod +x "$TEMP_SCRIPT"
-bash "$TEMP_SCRIPT"
-rm -f "$TEMP_SCRIPT"
+exec bash "$TEMP_SCRIPT"
