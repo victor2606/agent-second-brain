@@ -1,14 +1,27 @@
 """Claude processing service."""
 
-import json
 import logging
 import os
+import shutil
 import subprocess
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _get_claude_path() -> str:
+    """Get path to Claude CLI dynamically.
+
+    Uses claude-proxy to route through VPN for regions where API is blocked.
+    """
+    # Prefer claude-proxy for VPN routing
+    proxy_path = shutil.which("claude-proxy")
+    if proxy_path:
+        return proxy_path
+    # Fallback to direct claude
+    return shutil.which("claude") or "/opt/homebrew/bin/claude"
 
 DEFAULT_TIMEOUT = 1200  # 20 minutes
 
@@ -149,7 +162,7 @@ CRITICAL OUTPUT FORMAT:
 
             result = subprocess.run(
                 [
-                    "/home/shima/.local/bin/claude",
+                    _get_claude_path(),
                     "--print",
                     "--dangerously-skip-permissions",
                     "--mcp-config",
@@ -251,7 +264,7 @@ EXECUTION:
 
             result = subprocess.run(
                 [
-                    "/home/shima/.local/bin/claude",
+                    _get_claude_path(),
                     "--print",
                     "--dangerously-skip-permissions",
                     "--mcp-config",
@@ -327,7 +340,7 @@ CRITICAL OUTPUT FORMAT:
 
             result = subprocess.run(
                 [
-                    "/home/shima/.local/bin/claude",
+                    _get_claude_path(),
                     "--print",
                     "--dangerously-skip-permissions",
                     "--mcp-config",
