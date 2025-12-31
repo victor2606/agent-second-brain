@@ -56,3 +56,8 @@ vault/attachments/**/*
 # MOC personal content (keep structure)
 vault/MOC/*.md
 !vault/MOC/*.md.example
+
+# Skill references with personal data
+vault/.claude/skills/dbrain-processor/references/about.md
+vault/.claude/skills/dbrain-processor/references/classification.md
+vault/.claude/skills/dbrain-processor/references/todoist.md

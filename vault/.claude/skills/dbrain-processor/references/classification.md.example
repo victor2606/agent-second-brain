@@ -1,0 +1,194 @@
+# Entry Classification
+
+## Work Domains → Categories
+
+Based on user's work context (see [ABOUT.md](ABOUT.md)):
+
+### SaaS-продукты
+Маркировка рекламы, голосовые ассистенты, бот-транскрибатор, метрики, партнёры
+
+**Keywords:** маркировка, ОРД, ERID, акты, голосовой бот, ассистент, транскрибация, SaaS, MRR, подписка, монетизация
+
+**→ Category:** task (p1-p2) или project → Todoist / thoughts/
+
+### Консалтинг
+Клиенты, кейсы, упаковка, продажи пакетов, ставка
+
+**Keywords:** консалтинг, клиент, консультация, кейс, пакет, Quick Win, AI Roadmap, ставка, 15к/час
+
+**→ Category:** task (p1-p2) → Todoist
+
+### Контент & Медийка
+Нейроборщ, эфиры, Telegram-канал, конференции
+
+**Keywords:** Нейроборщ, эфир, @neuroborsch, пост, контент, конференция, выступление, медийка
+
+**→ Category:** idea → thoughts/ideas/ или task если с дедлайном
+
+### Закупки
+B2B Center, заявки, тендеры, документы
+
+**Keywords:** закупка, тендер, B2B Center, заявка, документация, аукцион
+
+**→ Category:** task (p2-p3) → Todoist
+
+### GodKod Ops
+Процессы, автоматизация, инфраструктура, партнёры
+
+**Keywords:** GodKod, процесс, автоматизация, n8n, сервер, Coolify, инфраструктура, партнёр
+
+**→ Category:** task или project (depends on urgency)
+
+### Личное
+Семья, путешествия, бег, 5 вёрст, железяки, диктофон
+
+**Keywords:** семья, дочь, жена, путешествие, бег, вело, 5 вёрст, диктофон, железяки
+
+**→ Category:** task (p4) или reflection
+
+---
+
+## Decision Tree
+
+```
+Entry text contains...
+│
+├─ SaaS-продукт или партнёр? ────────────────────> TASK (p1-p2)
+│  (маркировка, голосовой бот, метрики, партнёр)
+│
+├─ Клиент консалтинга или дедлайн? ──────────────> TASK (p1-p2)
+│  (клиент, консультация, дедлайн, презентация)
+│
+├─ Закупки? ─────────────────────────────────────> TASK (p2-p3)
+│  (тендер, заявка, B2B Center)
+│
+├─ Operational/urgent? ──────────────────────────> TASK (p2-p3)
+│  (нужно сделать, не забыть, позвонить, встреча)
+│
+├─ AI/tech learning? ────────────────────────────> LEARNING
+│  (узнал, модель, агент, интеграция, Claude Code)
+│
+├─ Product/SaaS idea? ───────────────────────────> IDEA или PROJECT
+│  (продукт, MVP, гипотеза, новый SaaS)
+│
+├─ Strategic thinking? ──────────────────────────> PROJECT
+│  (стратегия, план, долгосрочно)
+│
+├─ Personal insight? ────────────────────────────> REFLECTION
+│  (понял, осознал, философия)
+│
+└─ Content idea? ────────────────────────────────> IDEA
+   (пост, тезис, контент, Нейроборщ)
+```
+
+## Apply Decision Filters
+
+Перед сохранением спроси:
+- Это приближает к пассивному доходу?
+- Это можно автоматизировать?
+- Требует ли это раздувания команды? (красный флаг)
+- Есть ли партнёр на продукт/маркетинг?
+
+Если да на первые 2 вопроса → повысить приоритет.
+Если да на 3-й вопрос → понизить приоритет или отклонить.
+
+---
+
+## Photo Entries
+
+For `[photo]` entries:
+
+1. Analyze image content via vision
+2. Determine domain:
+   - Скриншот метрик SaaS → SaaS-продукты
+   - Схема/диаграмма → AI & Tech или Product
+   - Текст/статья → Learning
+3. Add description to daily file
+
+---
+
+## Output Locations
+
+| Category | Destination | Priority |
+|----------|-------------|----------|
+| task (SaaS) | Todoist | p1-p2 |
+| task (консалтинг) | Todoist | p1-p2 |
+| task (закупки) | Todoist | p2-p3 |
+| task (ops) | Todoist | p2-p3 |
+| task (контент) | Todoist | p3-p4 |
+| idea | thoughts/ideas/ | — |
+| reflection | thoughts/reflections/ | — |
+| project | thoughts/projects/ | — |
+| learning | thoughts/learnings/ | — |
+
+---
+
+## File Naming
+
+```
+thoughts/{category}/{YYYY-MM-DD}-short-title.md
+```
+
+Examples:
+```
+thoughts/ideas/2025-12-30-voice-bot-pricing.md
+thoughts/projects/2025-12-30-markirovka-monetization.md
+thoughts/learnings/2025-12-30-claude-code-workflow.md
+```
+
+---
+
+## Thought Structure
+
+Use preferred format:
+
+```markdown
+---
+date: {YYYY-MM-DD}
+type: {category}
+domain: {SaaS|Консалтинг|Контент|Закупки|GodKod Ops|Личное}
+tags: [tag1, tag2]
+---
+
+## Context
+[Что привело к мысли]
+
+## Insight
+[Ключевая идея]
+
+## Implication
+[Что это значит для GodKod/SaaS/консалтинга]
+
+## Next Action
+[Конкретный шаг — не абстрактный]
+```
+
+---
+
+## Anti-Patterns (ИЗБЕГАТЬ)
+
+При создании мыслей НЕ делать:
+- Абстрактные рассуждения без Next Action
+- Новые SaaS-идеи без валидации (уже 20 не выстрелили!)
+- Повторы без синтеза (кластеризуй похожие!)
+- Хаотичные списки без приоритетов
+- Задачи типа "подумать о..." (конкретизируй!)
+- Идеи, требующие раздувания команды
+
+---
+
+## MOC Updates
+
+After creating thought file, add link to:
+```
+MOC/MOC-{category}s.md
+```
+
+Group by domain when relevant:
+```markdown
+## SaaS
+- [[2025-12-30-markirovka-monetization]] - Монетизация маркировки
+
+## Консалтинг
+- [[2025-12-30-package-sales]] - Почему не покупают пакеты
+```
