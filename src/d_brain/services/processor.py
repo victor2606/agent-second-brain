@@ -23,6 +23,31 @@ def _get_claude_path() -> str:
     # Fallback to direct claude
     return shutil.which("claude") or "/opt/homebrew/bin/claude"
 
+
+def _run_claude(args: list[str], cwd: Path, env: dict, timeout: int) -> subprocess.CompletedProcess:
+    """Run Claude CLI through login shell to ensure proper environment.
+
+    OAuth tokens require login shell environment to be accessible.
+    """
+    claude_path = _get_claude_path()
+    # Build command string for bash -l -c
+    # Escape single quotes in args
+    escaped_args = []
+    for arg in args:
+        escaped = arg.replace("'", "'\"'\"'")
+        escaped_args.append(f"'{escaped}'")
+    cmd_str = f"{claude_path} {' '.join(escaped_args)}"
+
+    return subprocess.run(
+        ["bash", "-l", "-c", cmd_str],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+        env=env,
+    )
+
 DEFAULT_TIMEOUT = 1200  # 20 minutes
 
 
@@ -160,9 +185,8 @@ CRITICAL OUTPUT FORMAT:
             if self.todoist_api_key:
                 env["TODOIST_API_KEY"] = self.todoist_api_key
 
-            result = subprocess.run(
+            result = _run_claude(
                 [
-                    _get_claude_path(),
                     "--print",
                     "--dangerously-skip-permissions",
                     "--mcp-config",
@@ -171,17 +195,15 @@ CRITICAL OUTPUT FORMAT:
                     prompt,
                 ],
                 cwd=self.vault_path.parent,
-                capture_output=True,
-                text=True,
-                timeout=DEFAULT_TIMEOUT,
-                check=False,
                 env=env,
+                timeout=DEFAULT_TIMEOUT,
             )
 
             if result.returncode != 0:
-                logger.error("Claude processing failed: %s", result.stderr)
+                error_msg = result.stderr or result.stdout or "Claude processing failed"
+                logger.error("Claude processing failed: %s", error_msg)
                 return {
-                    "error": result.stderr or "Claude processing failed",
+                    "error": error_msg,
                     "processed_entries": 0,
                 }
 
@@ -262,9 +284,8 @@ EXECUTION:
             if self.todoist_api_key:
                 env["TODOIST_API_KEY"] = self.todoist_api_key
 
-            result = subprocess.run(
+            result = _run_claude(
                 [
-                    _get_claude_path(),
                     "--print",
                     "--dangerously-skip-permissions",
                     "--mcp-config",
@@ -273,17 +294,15 @@ EXECUTION:
                     prompt,
                 ],
                 cwd=self.vault_path.parent,
-                capture_output=True,
-                text=True,
-                timeout=DEFAULT_TIMEOUT,
-                check=False,
                 env=env,
+                timeout=DEFAULT_TIMEOUT,
             )
 
             if result.returncode != 0:
-                logger.error("Claude execution failed: %s", result.stderr)
+                error_msg = result.stderr or result.stdout or "Claude execution failed"
+                logger.error("Claude execution failed: %s", error_msg)
                 return {
-                    "error": result.stderr or "Claude execution failed",
+                    "error": error_msg,
                     "processed_entries": 0,
                 }
 
@@ -338,9 +357,8 @@ CRITICAL OUTPUT FORMAT:
             if self.todoist_api_key:
                 env["TODOIST_API_KEY"] = self.todoist_api_key
 
-            result = subprocess.run(
+            result = _run_claude(
                 [
-                    _get_claude_path(),
                     "--print",
                     "--dangerously-skip-permissions",
                     "--mcp-config",
@@ -349,17 +367,15 @@ CRITICAL OUTPUT FORMAT:
                     prompt,
                 ],
                 cwd=self.vault_path.parent,
-                capture_output=True,
-                text=True,
-                timeout=DEFAULT_TIMEOUT,
-                check=False,
                 env=env,
+                timeout=DEFAULT_TIMEOUT,
             )
 
             if result.returncode != 0:
-                logger.error("Weekly digest failed: %s", result.stderr)
+                error_msg = result.stderr or result.stdout or "Weekly digest failed"
+                logger.error("Weekly digest failed: %s", error_msg)
                 return {
-                    "error": result.stderr or "Weekly digest failed",
+                    "error": error_msg,
                     "processed_entries": 0,
                 }
 
