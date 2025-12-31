@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# ===================
+# VAULT PERSONAL DATA
+# ===================
+# Keep structure (.gitkeep, .example) but ignore personal content
+
+# Daily notes (personal)
+vault/daily/*.md
+!vault/daily/.gitkeep
+
+# Goals (personal) - use .example for templates
+vault/goals/*.md
+!vault/goals/*.md.example
+
+# Thoughts (personal)
+vault/thoughts/**/*.md
+!vault/thoughts/**/.gitkeep
+
+# Summaries (personal)
+vault/summaries/*.md
+!vault/summaries/.gitkeep
+
+# Attachments (personal photos/files)
+vault/attachments/**/*
+!vault/attachments/.gitkeep
+!vault/attachments/**/.gitkeep
+
+# MOC personal content (keep structure)
+vault/MOC/*.md
+!vault/MOC/*.md.example
