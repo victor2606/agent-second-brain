@@ -57,6 +57,10 @@ vault/attachments/**/*
 vault/MOC/*.md
 !vault/MOC/*.md.example
 
+# Hypothesis maps (personal) - keep schema only
+vault/hypothesis/**/*.md
+!vault/hypothesis/_schema.md
+
 # Skill references with personal data
 vault/.claude/skills/dbrain-processor/references/about.md
 vault/.claude/skills/dbrain-processor/references/classification.md
