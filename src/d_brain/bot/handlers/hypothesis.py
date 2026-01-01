@@ -15,6 +15,7 @@ from d_brain.bot.formatters import format_process_report
 from d_brain.config import get_settings
 from d_brain.services.git import VaultGit
 from d_brain.services.processor import ClaudeProcessor
+from d_brain.services.transcription import DeepgramTranscriber
 
 router = Router(name="hypothesis")
 logger = logging.getLogger(__name__)
@@ -41,10 +42,7 @@ class ParsedCommand:
 class HypothesisState(StatesGroup):
     """FSM states for hypothesis creation flow."""
 
-    waiting_for_goal = State()
-    waiting_for_metrics = State()
-    waiting_for_subject = State()
-    waiting_for_hypothesis = State()
+    ekg_session = State()  # Multi-turn EKG conversation with Claude
 
 
 def parse_subcommand(args: str | None) -> ParsedCommand:
@@ -308,47 +306,41 @@ async def hypothesis_command_handler(
     parsed = parse_subcommand(command.args)
     logger.info("Parsed subcommand: %s", parsed)
 
+    # Special handling for NEW - start EKG session with Claude
+    if parsed.subcommand == HypothesisSubcommand.NEW:
+        domain = parsed.domain or "business"
+        await state.set_state(HypothesisState.ekg_session)
+        await state.update_data(domain=domain, history=[])
+
+        status_msg = await message.answer("⏳ Запускаю EKG сессию...")
+
+        # Call Claude to start the EKG session
+        prompt = build_ekg_start_prompt(domain)
+        report = await run_claude_with_progress(prompt, status_msg, "⏳ Запускаю EKG сессию...")
+
+        # Store Claude's first message in history
+        report_text = report.get("report", "")
+        await state.update_data(history=[{"role": "assistant", "content": report_text}])
+
+        formatted = format_response_for_telegram(report)
+        try:
+            await status_msg.edit_text(formatted + "\n\n<i>Для отмены: /cancel</i>")
+        except Exception:
+            await status_msg.edit_text(formatted, parse_mode=None)
+        return
+
     # Build appropriate prompt
     prompt = build_hypothesis_prompt(parsed)
 
     # Show progress message
     status_messages = {
         HypothesisSubcommand.DASHBOARD: "⏳ Загружаю hypothesis maps...",
-        HypothesisSubcommand.NEW: "⏳ Подготавливаю создание hypothesis map...",
         HypothesisSubcommand.REVIEW: "⏳ Анализирую hypothesis map...",
         HypothesisSubcommand.VALIDATE: "⏳ Проверяю hypothesis map...",
     }
     status_msg = await message.answer(status_messages.get(parsed.subcommand, "⏳ Processing..."))
 
-    # Run Claude with progress updates
-    async def run_with_progress() -> dict:
-        task = asyncio.create_task(call_claude_processor(prompt))
-
-        elapsed = 0
-        while not task.done():
-            await asyncio.sleep(30)
-            elapsed += 30
-            if not task.done():
-                try:
-                    await status_msg.edit_text(
-                        f"{status_messages.get(parsed.subcommand, '⏳ Processing...')} "
-                        f"({elapsed // 60}m {elapsed % 60}s)"
-                    )
-                except Exception:
-                    pass
-
-        return await task
-
-    report = await run_with_progress()
-
-    # Commit changes if new map was created
-    if parsed.subcommand == HypothesisSubcommand.NEW and "error" not in report:
-        settings = get_settings()
-        git = VaultGit(settings.vault_path)
-        try:
-            await asyncio.to_thread(git.commit_and_push, "feat: create hypothesis map")
-        except Exception as e:
-            logger.warning("Failed to commit hypothesis map: %s", e)
+    report = await run_claude_with_progress(prompt, status_msg, status_messages.get(parsed.subcommand, "⏳ Processing..."))
 
     # Format and send response
     formatted = format_response_for_telegram(report)
@@ -357,3 +349,229 @@ async def hypothesis_command_handler(
     except Exception:
         # Fallback: send without HTML parsing
         await status_msg.edit_text(formatted, parse_mode=None)
+
+
+@router.message(Command("cancel"))
+async def cancel_handler(message: Message, state: FSMContext) -> None:
+    """Cancel current hypothesis creation flow."""
+    current_state = await state.get_state()
+    if current_state is None:
+        await message.answer("Нет активного процесса для отмены.")
+        return
+
+    await state.clear()
+    await message.answer("❌ Создание hypothesis map отменено.")
+
+
+@router.message(HypothesisState.ekg_session)
+async def handle_ekg_input(message: Message, bot: Bot, state: FSMContext) -> None:
+    """Handle user input during EKG session - Claude drives the conversation."""
+    user_input = None
+
+    # Handle voice input
+    if message.voice:
+        await message.chat.do(action="typing")
+        settings = get_settings()
+        transcriber = DeepgramTranscriber(settings.deepgram_api_key)
+
+        try:
+            file = await bot.get_file(message.voice.file_id)
+            if not file.file_path:
+                await message.answer("❌ Не удалось скачать голосовое")
+                return
+
+            file_bytes = await bot.download_file(file.file_path)
+            if not file_bytes:
+                await message.answer("❌ Не удалось скачать голосовое")
+                return
+
+            audio_bytes = file_bytes.read()
+            user_input = await transcriber.transcribe(audio_bytes)
+        except Exception as e:
+            logger.exception("Failed to transcribe voice in EKG session")
+            await message.answer(f"❌ Не удалось транскрибировать: {e}")
+            return
+
+        if not user_input:
+            await message.answer("❌ Не удалось распознать речь")
+            return
+
+        # Echo transcription to user
+        await message.answer(f"🎤 <i>{user_input}</i>")
+
+    # Handle text input
+    elif message.text:
+        user_input = message.text.strip()
+
+    else:
+        await message.answer("❌ Отправь текст или голосовое сообщение.")
+        return
+
+    # Get session data
+    data = await state.get_data()
+    domain = data.get("domain", "business")
+    history = data.get("history", [])
+
+    # Add user message to history
+    history.append({"role": "user", "content": user_input})
+    await state.update_data(history=history)
+
+    status_msg = await message.answer("⏳ Анализирую...")
+
+    # Build prompt with full conversation history
+    prompt = build_ekg_continuation_prompt(domain, history)
+
+    report = await run_claude_with_progress(prompt, status_msg, "⏳ Анализирую...")
+
+    # Check if Claude created the file (session complete)
+    report_text = report.get("report", "")
+    session_complete = "[EKG_COMPLETE]" in report_text or "vault/hypothesis/" in report_text
+
+    if session_complete:
+        await state.clear()
+        # Commit changes
+        settings = get_settings()
+        git = VaultGit(settings.vault_path)
+        try:
+            await asyncio.to_thread(git.commit_and_push, "feat: create hypothesis map via EKG")
+        except Exception as e:
+            logger.warning("Failed to commit hypothesis map: %s", e)
+    else:
+        # Add Claude response to history for next turn
+        history.append({"role": "assistant", "content": report_text})
+        await state.update_data(history=history)
+
+    # Format and send response
+    formatted = format_response_for_telegram(report)
+    try:
+        await status_msg.edit_text(formatted)
+    except Exception:
+        await status_msg.edit_text(formatted, parse_mode=None)
+
+
+async def run_claude_with_progress(prompt: str, status_msg: Message, status_text: str) -> dict:
+    """Run Claude processor with progress updates."""
+    task = asyncio.create_task(call_claude_processor(prompt))
+
+    elapsed = 0
+    while not task.done():
+        await asyncio.sleep(30)
+        elapsed += 30
+        if not task.done():
+            try:
+                await status_msg.edit_text(f"{status_text} ({elapsed // 60}m {elapsed % 60}s)")
+            except Exception:
+                pass
+
+    return await task
+
+
+def build_ekg_start_prompt(domain: str) -> str:
+    """Build Claude prompt to start EKG session as authentic facilitator."""
+    return f"""Ты — фасилитатор ЭКГ (Экспресс Карта Гипотез) по методологии hypothesismapping.com.
+
+РОЛЬ ФАСИЛИТАТОРА:
+- Ты НЕ эксперт, ты методист — следишь за форматом, не даёшь советов по содержанию
+- Задаёшь вопросы, помогаешь структурировать мысли клиента
+- Ловишь типичные ошибки и мягко направляешь к исправлению
+- Не торопишь, даёшь время подумать
+
+КОНТЕКСТ СЕССИИ:
+- Domain: {domain}
+- Формат: Telegram чат (короткие сообщения)
+- Время: ~20-30 минут на всю карту
+
+ПРОЧИТАЙ ДЛЯ КОНТЕКСТА:
+1. vault/hypothesis/_schema.md — формат итогового файла
+2. vault/goals/ — текущие цели клиента (для связей)
+3. vault/hypothesis/{domain}/ — существующие карты (для контекста)
+
+ЭКГ СТРУКТУРА:
+1. ЦЕЛЬ — куда хотим прийти (результат, не задача)
+2. МЕТРИКИ — как измерим (субъективные 0-10 + объективные числа)
+3. СУБЪЕКТ — чьё поведение меняем (автономный агент, не исполнитель)
+4. ГИПОТЕЗА — если → то → потому что → тогда
+5. ЭКСПЕРИМЕНТ — минимальный тест для проверки
+
+ТИПИЧНЫЕ ОШИБКИ (лови и исправляй):
+1. Задача вместо цели: "Внедрить CRM" → спроси "А зачем? Что изменится?"
+2. Исполнитель вместо субъекта: "Команда продаж" → "Кто принимает решение покупать?"
+3. "Потому что" о нас: "нам нужна выручка" → "Какая боль/желание СУБЪЕКТА?"
+4. Преждевременная конкретизация: "Redis с TTL 300" → "Какой принцип, механизм?"
+5. Поверхностная мотивация → используй технику "5 ну и что?"
+
+ТЕХНИКИ ФАСИЛИТАЦИИ:
+• Goal Shaking (Шатание цели):
+  - Преувеличение: "Если достигнем в 10 раз больше — это всё ещё то, чего хочешь?"
+  - Вычитание: "Убери X — цель всё ещё важна?"
+  - Границы: "До какого предела готов идти ради этого?"
+• 5 ну и что?: углубляй мотивацию субъекта
+• Red Path: фокус только на приоритетном
+
+ФОРМАТ ОТВЕТА:
+- ТОЛЬКО HTML для Telegram: <b>, <i>, <code>
+- Никакого markdown: **, ##, ```
+- Лаконично — это чат, не документ
+- Один вопрос за раз
+- Когда карта готова — создай файл и напиши [EKG_COMPLETE]
+
+НАЧНИ СЕССИЮ:
+Поприветствуй, объясни что будем делать за 20-30 минут.
+Спроси про ЦЕЛЬ — что хочет изменить/достичь.
+Не давай примеров сразу — сначала послушай клиента.
+"""
+
+
+def build_ekg_continuation_prompt(domain: str, history: list[dict]) -> str:
+    """Build Claude prompt to continue EKG session as authentic facilitator."""
+    history_text = "\n".join([
+        f"{'КЛИЕНТ' if msg['role'] == 'user' else 'ФАСИЛИТАТОР'}: {msg['content']}"
+        for msg in history
+    ])
+
+    return f"""Ты — фасилитатор ЭКГ, продолжаешь сессию.
+
+РОЛЬ: Методист, не эксперт. Следишь за форматом, ловишь ошибки, помогаешь структурировать.
+
+ИСТОРИЯ ДИАЛОГА:
+{history_text}
+
+КОНТЕКСТ:
+- Domain: {domain}
+- Читай vault/hypothesis/_schema.md для формата файла
+- Читай vault/goals/ для связи с целями клиента
+
+ЭКГ СТРУКТУРА (отслеживай прогресс):
+1. ЦЕЛЬ — результат, не задача
+2. МЕТРИКИ — субъективные (0-10) + объективные (числа)
+3. СУБЪЕКТ — автономный агент, чьё поведение меняем
+4. ГИПОТЕЗА — если → то → потому что → тогда
+5. ЭКСПЕРИМЕНТ — минимальный тест
+
+ОШИБКИ (ловишь в ответах клиента):
+• Задача вместо цели → "А зачем? Что изменится когда сделаешь?"
+• Исполнитель вместо субъекта → "Это кто выполняет. А на кого влияем?"
+• "Потому что" о нас → "Это наша мотивация. А субъекту-то зачем?"
+• Преждевременная конкретизация → "Это уже решение. Какой принцип за ним?"
+• Поверхностная мотивация → "Ну и что? Что за этим стоит глубже?"
+
+ТЕХНИКИ:
+• Goal Shaking: "Если в 10x — всё ещё хочешь?", "Убери X — важно?", "До какого предела?"
+• 5 ну и что?: копай мотивацию глубже
+• Если клиент застрял — предложи варианты, но не навязывай
+
+ТВОЯ ЗАДАЧА СЕЙЧАС:
+1. Проанализируй последний ответ клиента
+2. Если ошибка — мягко укажи, помоги переформулировать
+3. Если ОК — подтверди коротко, переходи к следующему элементу
+4. Если все элементы собраны:
+   - Создай файл vault/hypothesis/{domain}/hm-<slug>.md по _schema.md
+   - Обнови vault/MOC/MOC-hypotheses.md
+   - Покажи краткое summary карты
+   - Напиши [EKG_COMPLETE]
+
+ФОРМАТ:
+- HTML: <b>, <i>, <code> — никакого markdown
+- Один вопрос/действие за раз
+- Лаконично, это чат
+"""
